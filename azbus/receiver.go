@@ -44,6 +44,10 @@ const (
 	RenewalTime = 50 * time.Second
 )
 
+var (
+	ErrReceiveMessagesCancel = errors.New("finished receiveing messages")
+)
+
 // Settings for Receivers:
 //
 //     NumberOfReceivedMessages  int
@@ -89,6 +93,9 @@ type ReceiverConfig struct {
 
 	// If a deadletter receiver then this is true
 	Deadletter bool
+
+	// Set how long ReceiveMessages is active.. in seconds
+	Duration int
 }
 
 // Receiver to receive messages on  a queue
@@ -233,7 +240,13 @@ func (r *Receiver) receiverRenewMessageLock(ctx context.Context, count int, msg 
 
 func (r *Receiver) ReceiveMessages(handler Handler) error {
 
-	ctx := context.Background()
+	var ctx context.Context
+	var cancel context.CancelFunc
+	ctx = context.Background()
+	if r.Cfg.Duration > 0 {
+		ctx, cancel = context.WithTimeoutCause(ctx, time.Duration(r.Cfg.Duration)*time.Second, ErrReceiveMessagesCancel)
+		defer cancel()
+	}
 
 	err := r.Open()
 	if err != nil {
@@ -299,7 +312,6 @@ func (r *Receiver) ReceiveMessages(handler Handler) error {
 			return err
 		}
 	}
-
 }
 
 // The following 2 methods satisfy the startup.Listener interface.
