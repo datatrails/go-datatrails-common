@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/datatrails/go-datatrails-common/tenantid"
 )
 
 // Tailored Prometheus metrics
@@ -62,17 +60,7 @@ func (m *Metrics) NewLatencyMetricsHandler(h http.Handler) http.Handler {
 
 		// generate post-process metrics here...
 
-		// tenantID
-		// TODO: when we put the tenant ID in the JWT we can get rid of these
-		// odd header arrangements
-		var tenant string
-		tenantID := tenantid.GetTenantIDFromHeader(header)
-		if tenantID != "" {
-			log.Debugf("tenant ID %s", tenantID)
-			tenant = strings.TrimPrefix(tenantID, tenantid.Prefix)
-			tenantid.DeleteTenantIDFromHeader(header)
-		}
-		observer.ObserveRequestsCount(fields, r.Method, tenant)
-		observer.ObserveRequestsLatency(latency, fields, r.Method, tenant)
+		observer.ObserveRequestsCount(fields, r.Method)
+		observer.ObserveRequestsLatency(latency, fields, r.Method)
 	})
 }

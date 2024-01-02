@@ -20,9 +20,9 @@ func CosmosChargeMetric() *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "archivist_cosmos_charge",
-			Help: "Cosmos charge by tenant, method and resource.",
+			Help: "Cosmos charge by method and resource.",
 		},
-		[]string{"tenant", "method", "resource"},
+		[]string{"method", "resource"},
 	)
 }
 
@@ -31,9 +31,9 @@ func CosmosDurationMetric() *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "archivist_cosmos_duration",
-			Help: "Cosmos duration by tenant, method and resource.",
+			Help: "Cosmos duration by method and resource.",
 		},
-		[]string{"tenant", "method", "resource"},
+		[]string{"method", "resource"},
 	)
 }
 
@@ -42,9 +42,9 @@ func RequestsCounterMetric() *prometheus.CounterVec {
 	return prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "archivist_requests_total",
-			Help: "Total number of requests by method, tenant, service and resource.",
+			Help: "Total number of requests by method, service and resource.",
 		},
-		[]string{"method", "tenant", "service", "resource"},
+		[]string{"method", "service", "resource"},
 	)
 }
 
@@ -59,7 +59,7 @@ func RequestsLatencyMetric() *prometheus.HistogramVec {
 			Help:    "Histogram of time to reply to request.",
 			Buckets: []float64{.005, .01, .02, .04, .08, .16, .32},
 		},
-		[]string{"method", "tenant", "service", "resource"},
+		[]string{"method", "service", "resource"},
 	)
 }
 
@@ -68,14 +68,14 @@ func RequestsLatencyMetric() *prometheus.HistogramVec {
 // plot average confirmation time and the apdex score.
 // https://www.bookstack.cn/read/prometheus-en/1e87bb1c6ea1f003.md
 // bucket limits are in seconds... and are different for ledger and tenant_storage
-func NewEventsConfirmDurationMetric(name string, buckets []float64) *prometheus.HistogramVec {
+func NewEventsConfirmDurationMetric(buckets []float64) *prometheus.HistogramVec {
 	return prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    fmt.Sprintf("archivist_%sevents_confirmation_duration", name),
+			Name:    "archivist_events_confirmation_duration",
 			Help:    "Histogram of time to confirm an event.",
 			Buckets: buckets,
 		},
-		[]string{"tenant", "operation"},
+		[]string{"operation"},
 	)
 }
 
