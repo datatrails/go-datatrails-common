@@ -54,20 +54,22 @@ func WithOptionalHandlers(handlers ...HandleChainFunc) ServerOption {
 
 // New creates a new httpserver.
 func New(log Logger, name string, port string, h http.Handler, opts ...ServerOption) *Server {
-	s := Server{
-		server: http.Server{
-			Addr: ":" + port,
-		},
-		handler: h,
-		name:    strings.ToLower(name),
+	var s Server
+	return new_(&s, log, name, port, h, opts...)
+}
+
+// internal 'function outlining' to promote Server to the callers stack
+func new_(s *Server, log Logger, name string, port string, h http.Handler, opts ...ServerOption) *Server {
+	s.server = http.Server{
+		Addr: ":" + port,
 	}
+	s.handler = h
+	s.name = strings.ToLower(name)
 	s.log = log.WithIndex("httpserver", s.String())
 	for _, opt := range opts {
-		opt(&s)
+		opt(s)
 	}
-	// It is preferable to return a copy rather than a reference. Unfortunately http.Server has an
-	// internal mutex and this cannot or should not be copied so we will return a reference instead.
-	return &s
+	return s
 }
 
 func (s *Server) String() string {
