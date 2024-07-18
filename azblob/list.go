@@ -7,21 +7,27 @@ import (
 
 	azStorageBlob "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 
-	"github.com/datatrails/go-datatrails-common/logger"
 	"github.com/datatrails/go-datatrails-common/tracing"
 )
 
 // Count counts the number of blobs filtered by the given tags filter
 func (azp *Storer) Count(ctx context.Context, tagsFilter string, opts ...Option) (int64, error) {
 
-	logger.Sugar.Debugf("Count")
+	var count int64
+	var m string
+	opts = append(opts, WithListMarker(&m))
 
-	r, err := azp.FilteredList(ctx, tagsFilter, opts...)
-	if err != nil {
-		return 0, err
+	for {
+		r, err := azp.FilteredList(ctx, tagsFilter, opts...)
+		if err != nil {
+			return 0, err
+		}
+		count += int64(len(r.Items))
+		if r.Marker == nil || *r.Marker == "" {
+			break
+		}
 	}
-
-	return int64(len(r.Items)), nil
+	return count, nil
 }
 
 type FilterResponse struct {
