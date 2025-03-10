@@ -19,6 +19,19 @@ func getOrFatal(key string) string {
 	return value
 }
 
+func getFloat64OrDefault(key string, defaultValue float64) float64 {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return defaultValue
+	}
+	b, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		logger.Sugar.Infof("environment variable %s not valid float32 value: %v", key, err)
+		return defaultValue
+	}
+	return b
+}
+
 func getTruthyOrFatal(key string) bool {
 	value, ok := os.LookupEnv(key)
 	if !ok {

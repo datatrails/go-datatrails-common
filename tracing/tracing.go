@@ -17,7 +17,12 @@ import (
 	zipkinot "github.com/openzipkin-contrib/zipkin-go-opentracing"
 	zipkin "github.com/openzipkin/zipkin-go"
 	zipkinhttp "github.com/openzipkin/zipkin-go/reporter/http"
+
+	"github.com/datatrails/go-datatrails-common/logger"
 )
+
+type StartSpanOption = opentracing.StartSpanOption
+type Span = opentracing.Span
 
 const (
 	requestID         = "x-request-id"
@@ -63,18 +68,13 @@ func TraceIDFromContext(ctx context.Context) string {
 	return valueFromCarrier(carrier, TraceID)
 }
 
-func NewSpanContext(ctx context.Context, operationName string) (opentracing.Span, context.Context) {
+func NewSpanContext(ctx context.Context, operationName string) (Span, context.Context) {
 	span := opentracing.StartSpan(operationName)
 	if span == nil {
 		return nil, ctx
 	}
 	ctx = opentracing.ContextWithSpan(ctx, span)
 	return span, ctx
-}
-
-// StartSpanFromContext is a simple wrapper that removes the requirement to import "github.com/opentracing/opentracing-go" in business code.
-func StartSpanFromContext(ctx context.Context, name string, options ...opentracing.StartSpanOption) (opentracing.Span, context.Context) {
-	return opentracing.StartSpanFromContext(ctx, name, options...)
 }
 
 func HTTPMiddleware(h http.Handler) http.Handler {
@@ -107,7 +107,7 @@ func trimPodName(p string) string {
 	// just one (length 5)
 
 	if len(a[(i-1)]) == 5 && (len(a[(i-2)]) == 10 || len(a[(i-2)]) == 11) {
-		// this has two instnace ID components so strip them
+		// this has two instance ID components so strip them
 		return strings.Join(a[:i-2], "-")
 	}
 	if i > 1 {
@@ -117,7 +117,7 @@ func trimPodName(p string) string {
 	return p
 }
 
-func NewTracer(log Logger, portName string) io.Closer {
+func NewTracer(log logger.Logger, portName string) io.Closer {
 	instanceName, _, _ := strings.Cut(getOrFatal("POD_NAME"), " ")
 	nameSpace := getOrFatal("POD_NAMESPACE")
 	containerName := getOrFatal("CONTAINER_NAME")
@@ -130,7 +130,7 @@ func NewTracer(log Logger, portName string) io.Closer {
 // configured.  If the necessary configuration is not available it is Fatal
 // unless disableVar is set and is truthy (strconf.ParseBool -> true). If
 // tracing is disabled returns nil
-func NewFromEnv(log Logger, service string, host string, endpointVar, disableVar string) io.Closer {
+func NewFromEnv(log logger.Logger, service string, host string, endpointVar, disableVar string) io.Closer {
 	ze, ok := os.LookupEnv(endpointVar)
 	if !ok {
 		if disabled := getTruthyOrFatal(disableVar); !disabled {
@@ -152,7 +152,7 @@ func NewFromEnv(log Logger, service string, host string, endpointVar, disableVar
 
 // New initialises tracing
 // uses zipkin client tracer
-func New(log Logger, service string, host string, zipkinEndpoint string) io.Closer {
+func New(log logger.Logger, service string, host string, zipkinEndpoint string) io.Closer {
 	// create our local service endpoint
 	localEndpoint, err := zipkin.NewEndpoint(service, host)
 	if err != nil {
@@ -163,12 +163,11 @@ func New(log Logger, service string, host string, zipkinEndpoint string) io.Clos
 	zipkinLogger := newZipkinLogger()
 	reporter := zipkinhttp.NewReporter(zipkinEndpoint, zipkinhttp.Logger(zipkinLogger))
 
-	// TODO: One day this should probably be configurable in helm for each service
-	// For now capture 1 in every 5 traces
-	rate := 0.2
+	rate := getFloat64OrDefault("TRACING_SAMPLE_RATE", 0.2)
+	log.Debugf("TRACING_SAMPLE_RATE %f", rate)
 
 	// This sampler is only used when a service creates new traces (which is rare, only if
-	// not recieving messages or presenting callable endpoints, e.g. a cron like service)
+	// not receiving messages or presenting callable endpoints, e.g. a cron like service)
 	sampler, err := zipkin.NewBoundarySampler(rate, time.Now().UnixNano())
 	if err != nil {
 		log.Panicf("unable to create zipkin sampler: rate %f: %v", rate, err)

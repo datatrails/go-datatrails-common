@@ -3,13 +3,14 @@ package azbus
 import (
 	azlog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
+	"github.com/datatrails/go-datatrails-common/logger"
 )
 
 // EnableAzureLogging emits log messages using local logger.
 // This must be called before any senders or receivers are opened.
 // TODO: Generalise this for any azure downstream package.
-func EnableAzureLogging(log Logger) {
-	if !log.Check(DebugLevel) {
+func EnableAzureLogging(log logger.Logger) {
+	if !log.Check(logger.DebugLevel) {
 		return
 	}
 	log.Debugf("Enabling Azure Logging")

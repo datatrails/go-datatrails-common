@@ -19,43 +19,9 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
+	"github.com/datatrails/go-datatrails-common/logger"
 	"github.com/veraison/go-cose"
 )
-
-// NewKeyVaultCoseSigner creates a new keyvault configuration that signs with ES384
-// using the latest version of the named key.
-func NewKeyVaultCoseSigner(ctx context.Context, keyName string, keyVaultURL string) (*KeyVaultCoseSigner, error) {
-	hasher := sha256.New()
-	hasher.Write([]byte("azure-keyvault"))
-	locationHash := hasher.Sum(nil)
-	locationHashString := hex.EncodeToString(locationHash)[:6]
-
-	kv := KeyVaultCoseSigner{
-		// We remove any cancelation function from the context so that it is
-		// safe to stash it.  We must then not use this context for onward
-		// requests without adding a further timeout.
-		ctx:     context.WithoutCancel(ctx),
-		keyName: keyName,
-		alg:     keyvault.ES384, // hardwired for the moment, add caller setting when needed
-		KeyVault: &KeyVault{
-			url: keyVaultURL,
-		},
-		locationIdentifier: locationHashString,
-	}
-
-	key, err := kv.GetLatestKey(ctx, kv.keyName)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get latest key for %s: %w", kv.keyName, err)
-	}
-
-	if key.Key.Kid == nil {
-		return nil, fmt.Errorf("key ID is nil")
-	}
-
-	kv.key = key
-
-	return &kv, nil
-}
 
 // KeyVaultCoseSigner is the azure keyvault client for interacting with keyvault keys
 // using a cose.Signer interface
@@ -71,6 +37,47 @@ type KeyVaultCoseSigner struct {
 	key                keyvault.KeyBundle
 	locationIdentifier string
 	*KeyVault
+}
+
+// NewKeyVaultCoseSigner creates a new keyvault configuration that signs with ES384
+// using the latest version of the named key.
+func NewKeyVaultCoseSigner(ctx context.Context, keyName string, keyVaultURL string, opts ...KeyVaultOption) (*KeyVaultCoseSigner, error) {
+	hasher := sha256.New()
+	hasher.Write([]byte("azure-keyvault"))
+	locationHash := hasher.Sum(nil)
+	locationHashString := hex.EncodeToString(locationHash)[:6]
+
+	kv := KeyVaultCoseSigner{
+		// We remove any cancelation function from the context so that it is
+		// safe to stash it.  We must then not use this context for onward
+		// requests without adding a further timeout.
+		ctx:     context.WithoutCancel(ctx),
+		keyName: keyName,
+		alg:     keyvault.ES384, // hardwired for the moment, add caller setting when needed
+		KeyVault: &KeyVault{
+			url: keyVaultURL,
+			log: logger.Sugar,
+		},
+		locationIdentifier: locationHashString,
+	}
+
+	// KeyVault options - not KeyVaultCoseSignerOptions
+	for _, opt := range opts {
+		opt(kv.KeyVault)
+	}
+
+	key, err := kv.GetLatestKey(ctx, kv.keyName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get latest key for %s: %w", kv.keyName, err)
+	}
+
+	if key.Key.Kid == nil {
+		return nil, fmt.Errorf("key ID is nil")
+	}
+
+	kv.key = key
+
+	return &kv, nil
 }
 
 // KeyLocation returns an identifier for the place where the key is stored, used by the

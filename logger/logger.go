@@ -220,6 +220,10 @@ func valueFromCarrier(carrier opentracing.TextMapCarrier, key string) string {
 //   - the new wrapped logger with a context metadata value for traceID
 //
 // This will be called on entry to a method or a function that has a context.Context.
+//
+// This should not be used in avid, avid-events and forestrie. This must remain until
+// go-datatrails-merklelog is sorted out and then it will be deleted and the dependency
+// on opentracing removed.
 func (wl *WrappedLogger) FromContext(ctx context.Context) *WrappedLogger {
 
 	span := opentracing.SpanFromContext(ctx)
