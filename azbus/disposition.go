@@ -8,7 +8,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/datatrails/go-datatrails-common/logger"
-	"github.com/datatrails/go-datatrails-common/tracing"
+	"github.com/datatrails/go-datatrails-common/spanner"
 )
 
 // Disposition describes the eventual demise of the message after processing by the client.
@@ -74,11 +74,17 @@ func (r *BatchReceiver) Dispose(ctx context.Context, d Disposition, err error, m
 	}
 }
 
-func abandon(ctx context.Context, log logger.Logger, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
+// Abandon abandons message. This function is not used but is present for consistency.
+func abandon(ctx context.Context, log logger.Logger, label string, sp spanner.StartSpanFromContextFunc, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
 	ctx = context.WithoutCancel(ctx)
 
-	span, ctx := tracing.StartSpanFromContext(ctx, "Message.Abandon")
-	defer span.Finish()
+	if sp != nil {
+		var span spanner.Spanner
+		span, ctx = sp(ctx, log, "Message.Abandon")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
+
 	log.Infof("Abandon Message on DeliveryCount %d: %v", msg.DeliveryCount, err)
 	err1 := r.AbandonMessage(ctx, msg, nil)
 	if err1 != nil {
@@ -88,11 +94,16 @@ func abandon(ctx context.Context, log logger.Logger, r *azservicebus.Receiver, e
 }
 
 // DeadLetter explicitly deadletters a message.
-func deadLetter(ctx context.Context, log logger.Logger, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
+func deadLetter(ctx context.Context, log logger.Logger, label string, sp spanner.StartSpanFromContextFunc, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
 	ctx = context.WithoutCancel(ctx)
 
-	span, ctx := tracing.StartSpanFromContext(ctx, "Message.DeadLetter")
-	defer span.Finish()
+	if sp != nil {
+		var span spanner.Spanner
+		span, ctx = sp(ctx, log, "Message.Deadletter")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
+
 	log.Infof("DeadLetter Message: %v", err)
 	options := azservicebus.DeadLetterOptions{
 		Reason: to.Ptr(strings.ToValidUTF8(err.Error(), "!!!")),
@@ -104,12 +115,15 @@ func deadLetter(ctx context.Context, log logger.Logger, r *azservicebus.Receiver
 	}
 }
 
-func complete(ctx context.Context, log logger.Logger, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
+func complete(ctx context.Context, log logger.Logger, label string, sp spanner.StartSpanFromContextFunc, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
 	ctx = context.WithoutCancel(ctx)
 
-	span, _ := tracing.StartSpanFromContext(ctx, "Message.Complete")
-	defer span.Finish()
-
+	if sp != nil {
+		var span spanner.Spanner
+		span, ctx = sp(ctx, log, "Message.Complete")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
 	if err != nil {
 		log.Infof("Complete Message %v", err)
 	} else {
@@ -130,66 +144,48 @@ func complete(ctx context.Context, log logger.Logger, r *azservicebus.Receiver, 
 // azservicebus to resubmit the message 1 minute later. We keep the function signature with
 // unused arguments for consistency and in case we need to implement more sophisticated
 // algorithms in future.
-func reschedule(ctx context.Context, log logger.Logger, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
+func reschedule(ctx context.Context, log logger.Logger, label string, sp spanner.StartSpanFromContextFunc, r *azservicebus.Receiver, err error, msg *ReceivedMessage) {
 	ctx = context.WithoutCancel(ctx)
 
-	span, _ := tracing.StartSpanFromContext(ctx, "Message.Reschedule")
-	defer span.Finish()
+	if sp != nil {
+		var span spanner.Spanner
+		span, _ = sp(ctx, log, "Message.Reschedule")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
 	log.Infof("Reschedule Message on DeliveryCount %d: %v", msg.DeliveryCount, err)
 }
 
-// Abandon abandons message. This function is not used but is present for consistency.
+// Vanilla receiver.
 func (r *Receiver) abandon(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-
-	abandon(ctx, log, r.receiver, err, msg)
+	abandon(ctx, r.log, r.String(), r.spanner, r.receiver, err, msg)
 }
 
 func (r *Receiver) reschedule(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-
-	reschedule(ctx, log, r.receiver, err, msg)
+	reschedule(ctx, r.log, r.String(), r.spanner, r.receiver, err, msg)
 }
 
 func (r *Receiver) deadLetter(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-	deadLetter(ctx, log, r.receiver, err, msg)
+	deadLetter(ctx, r.log, r.String(), r.spanner, r.receiver, err, msg)
 }
 
 func (r *Receiver) complete(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-
-	complete(ctx, log, r.receiver, err, msg)
+	complete(ctx, r.log, r.String(), r.spanner, r.receiver, err, msg)
 }
 
-// Abandon abandons message. This function is not used but is present for consistency.
+// Batch receiver.
 func (r *BatchReceiver) abandon(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-
-	abandon(ctx, log, r.Receiver, err, msg)
+	abandon(ctx, r.log, r.String(), r.spanner, r.Receiver, err, msg)
 }
 
 func (r *BatchReceiver) reschedule(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-
-	reschedule(ctx, log, r.Receiver, err, msg)
+	reschedule(ctx, r.log, r.String(), r.spanner, r.Receiver, err, msg)
 }
 
 func (r *BatchReceiver) deadLetter(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-	deadLetter(ctx, log, r.Receiver, err, msg)
+	deadLetter(ctx, r.log, r.String(), r.spanner, r.Receiver, err, msg)
 }
 
 func (r *BatchReceiver) complete(ctx context.Context, err error, msg *ReceivedMessage) {
-	log := r.log.FromContext(ctx)
-	defer log.Close()
-
-	complete(ctx, log, r.Receiver, err, msg)
+	complete(ctx, r.log, r.String(), r.spanner, r.Receiver, err, msg)
 }

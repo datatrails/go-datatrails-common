@@ -8,6 +8,7 @@ import (
 
 	azStorageBlob "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/datatrails/go-datatrails-common/logger"
+	"github.com/datatrails/go-datatrails-common/spanner"
 )
 
 var (
@@ -32,8 +33,10 @@ type Storer struct {
 	containerClient *ContainerClient
 	serviceClient   *ServiceClient
 
-	log                          Logger
+	log                          logger.Logger
 	setReadResponseScannedStatus ReadResponseScannedStatus
+
+	spanner spanner.StartSpanFromContextFunc
 }
 
 type StorerOption func(*Storer)
@@ -41,6 +44,12 @@ type StorerOption func(*Storer)
 func WithSetScannedStatus(s ReadResponseScannedStatus) StorerOption {
 	return func(a *Storer) {
 		a.setReadResponseScannedStatus = s
+	}
+}
+
+func WithTracing(f spanner.StartSpanFromContextFunc) StorerOption {
+	return func(s *Storer) {
+		s.spanner = f
 	}
 }
 
@@ -82,6 +91,7 @@ func New(
 		Container:     container,
 		credential:    credential,
 		rootURL:       rootURL,
+		log:           logger.Sugar,
 	}
 	for _, option := range options {
 		option(&azp)

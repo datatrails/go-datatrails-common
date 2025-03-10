@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	azadmin "github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus/admin"
+	"github.com/datatrails/go-datatrails-common/logger"
 )
 
 var (
@@ -17,11 +18,11 @@ var (
 
 type azAdminClient struct {
 	ConnectionString string
-	log              Logger
+	log              logger.Logger
 	admin            *azadmin.Client
 }
 
-func newazAdminClient(log Logger, connectionString string) azAdminClient {
+func newazAdminClient(log logger.Logger, connectionString string) azAdminClient {
 	return azAdminClient{
 		ConnectionString: connectionString,
 		log:              log,

@@ -6,8 +6,7 @@ import (
 	"context"
 
 	azStorageBlob "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-
-	"github.com/datatrails/go-datatrails-common/tracing"
+	"github.com/datatrails/go-datatrails-common/spanner"
 )
 
 // Count counts the number of blobs filtered by the given tags filter
@@ -63,9 +62,14 @@ type FilterResponse struct {
 //
 // Returns all blobs with the specific tag filter.
 func (azp *Storer) FilteredList(ctx context.Context, tagsFilter string, opts ...Option) (*FilterResponse, error) {
-	span, ctx := tracing.StartSpanFromContext(ctx, "FilteredList")
-	defer span.Finish()
 
+	log := azp.log
+	var span spanner.Spanner
+	if azp.spanner != nil {
+		span, ctx = azp.spanner(ctx, log, "FilteredList")
+		defer span.Close()
+		//log = span.Logger()
+	}
 	var err error
 
 	options := &StorerOptions{}
@@ -73,7 +77,7 @@ func (azp *Storer) FilteredList(ctx context.Context, tagsFilter string, opts ...
 		opt(options)
 	}
 
-	if options.listMarker != nil {
+	if options.listMarker != nil && span != nil {
 		span.SetTag("marker", *options.listMarker)
 	}
 	o := &azStorageBlob.ServiceFilterBlobsOptions{
@@ -83,7 +87,9 @@ func (azp *Storer) FilteredList(ctx context.Context, tagsFilter string, opts ...
 
 	if options.listMaxResults > 0 {
 		o.MaxResults = &options.listMaxResults
-		span.SetTag("maxResults", options.listMaxResults)
+		if span != nil {
+			span.SetTag("maxResults", options.listMaxResults)
+		}
 	}
 
 	resp, err := azp.serviceClient.FindBlobsByTags(ctx, o)
@@ -98,7 +104,7 @@ func (azp *Storer) FilteredList(ctx context.Context, tagsFilter string, opts ...
 		Items:      resp.Blobs,
 	}
 
-	if r.Marker != nil {
+	if r.Marker != nil && span != nil {
 		span.SetTag("nextmarker", *r.Marker)
 	}
 
@@ -118,14 +124,18 @@ type ListerResponse struct {
 
 func (azp *Storer) List(ctx context.Context, opts ...Option) (*ListerResponse, error) {
 
-	span, ctx := tracing.StartSpanFromContext(ctx, "ListBlobsFlat")
-	defer span.Finish()
-
+	log := azp.log
+	var span spanner.Spanner
+	if azp.spanner != nil {
+		span, ctx = azp.spanner(ctx, log, "ListBlobsFlat")
+		defer span.Close()
+		//log = span.Logger()
+	}
 	options := &StorerOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}
-	if options.listMarker != nil {
+	if options.listMarker != nil && span != nil {
 		span.SetTag("marker", *options.listMarker)
 	}
 	o := azStorageBlob.ContainerListBlobsFlatOptions{
@@ -133,7 +143,9 @@ func (azp *Storer) List(ctx context.Context, opts ...Option) (*ListerResponse, e
 	}
 	if options.listPrefix != "" {
 		o.Prefix = &options.listPrefix
-		span.SetTag("prefix", options.listPrefix)
+		if span != nil {
+			span.SetTag("prefix", options.listPrefix)
+		}
 	}
 	if options.listIncludeTags {
 		o.Include = append(o.Include, azStorageBlob.ListBlobsIncludeItemTags)
@@ -143,7 +155,9 @@ func (azp *Storer) List(ctx context.Context, opts ...Option) (*ListerResponse, e
 	}
 	if options.listMaxResults > 0 {
 		o.MaxResults = &options.listMaxResults
-		span.SetTag("maxResults", options.listMaxResults)
+		if span != nil {
+			span.SetTag("maxResults", options.listMaxResults)
+		}
 	}
 
 	// TODO: v1.21 feature which would be great
@@ -163,7 +177,7 @@ func (azp *Storer) List(ctx context.Context, opts ...Option) (*ListerResponse, e
 	}
 
 	r.Marker = resp.NextMarker
-	if r.Marker != nil {
+	if r.Marker != nil && span != nil {
 		span.SetTag("nextmarker", *r.Marker)
 	}
 

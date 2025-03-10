@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/datatrails/go-datatrails-common/logger"
+	"github.com/datatrails/go-datatrails-common/spanner"
 )
 
 // BatchHandler is completely responsible for the processing of a batch of messages.
@@ -48,26 +49,33 @@ type BatchReceiver struct {
 
 	Cfg BatchReceiverConfig
 
-	log      Logger
+	log      logger.Logger
 	mtx      sync.Mutex
 	Receiver *azservicebus.Receiver
 	Options  *azservicebus.ReceiverOptions
 	Handler  BatchHandler
 	Cancel   context.CancelFunc
+	spanner  spanner.StartSpanFromContextFunc
 }
 
 type BatchReceiverOption func(*BatchReceiver)
 
-// WithBatchDeadline sets the context deadline used for the batch operation.
+// WithBatchReceiverDeadline sets the context deadline used for the batch operation.
 // If this is not set, the default is DefaultRenewalTime.
-func WithBatchDeadline(d time.Duration) BatchReceiverOption {
+func WithBatchReceiverDeadline(d time.Duration) BatchReceiverOption {
 	return func(r *BatchReceiver) {
 		r.Cfg.BatchDeadline = d
 	}
 }
 
+func WithBatchReceiverTracing(f spanner.StartSpanFromContextFunc) BatchReceiverOption {
+	return func(r *BatchReceiver) {
+		r.spanner = f
+	}
+}
+
 // NewBatchReceiver creates a new BatchReceiver.
-func NewBatchReceiver(log Logger, handler BatchHandler, cfg BatchReceiverConfig, opts ...BatchReceiverOption) *BatchReceiver {
+func NewBatchReceiver(log logger.Logger, handler BatchHandler, cfg BatchReceiverConfig, opts ...BatchReceiverOption) *BatchReceiver {
 	r := BatchReceiver{}
 	var options *azservicebus.ReceiverOptions
 
@@ -96,31 +104,6 @@ func (r *BatchReceiver) String() string {
 	return fmt.Sprintf("%s", r.Cfg.TopicOrQueueName)
 }
 
-func (r *BatchReceiver) CreateBatchReceivedMessageTracingContext(ctx context.Context, spanProps map[string]string) (context.Context, opentracing.Span) {
-	// We don't have the tracing span info on the context yet, that is what this function will add
-	// we we log using the reciever logger
-	r.log.Debugf("ContextFromReceivedMessage(): %v", spanProps)
-
-	var opts = []opentracing.StartSpanOption{}
-	carrier := opentracing.TextMapCarrier{}
-	// This just gets all the message Application Properties into a string map. That map is then passed into the
-	// open tracing constructor which extracts any bits it is interested in to use to setup the spans etc.
-	// It will ignore anything it doesn't care about. So the filtering of the map is done for us and
-	// we don't need to pre-filter it.
-	for k, v := range spanProps {
-		carrier.Set(k, v)
-	}
-	spanCtx, err := opentracing.GlobalTracer().Extract(opentracing.TextMap, carrier)
-	if err != nil {
-		r.log.Infof("CreateBatchReceivedMessageTracingContext(): Unable to extract span context: %v", err)
-	} else {
-		opts = append(opts, opentracing.ChildOf(spanCtx))
-	}
-	span := opentracing.StartSpan("handle batch", opts...)
-	ctx = opentracing.ContextWithSpan(ctx, span)
-	return ctx, span
-}
-
 func (r *BatchReceiver) receiveMessages(ctx context.Context) error {
 	r.log.Debugf("BatchSize %d, BatchDeadline: %v", r.Cfg.BatchSize, r.Cfg.BatchDeadline)
 
@@ -134,6 +117,8 @@ func (r *BatchReceiver) receiveMessages(ctx context.Context) error {
 
 func (r *BatchReceiver) receiveOneMessageBatch(ctx context.Context) error {
 
+	log := r.log
+
 	if r.Cfg.BatchSize == 0 {
 		return fmt.Errorf("BatchSize must be greater than zero")
 	}
@@ -143,34 +128,40 @@ func (r *BatchReceiver) receiveOneMessageBatch(ctx context.Context) error {
 	messages, err = r.Receiver.ReceiveMessages(ctx, r.Cfg.BatchSize, nil)
 	if err != nil {
 		azerr := fmt.Errorf("%s: ReceiveMessage failure: %w", r, NewAzbusError(err))
-		r.log.Infof("%s", azerr)
+		log.Infof("%s", azerr)
 		return azerr
 	}
 	total := len(messages)
 	r.log.Debugf("total messages %d", total)
 
 	// set a deadline for the batch operation, this should be shorter than the peak lock timeout
-	batchCtx, cancel := context.WithTimeout(ctx, r.Cfg.BatchDeadline)
+	ctx, cancel := context.WithTimeout(ctx, r.Cfg.BatchDeadline)
 	defer cancel()
 
-	// creating the span props from the first message is a bit arbitrary, but it's the best we can do
-	spanProps := make(map[string]string)
-	for k, v := range messages[0].ApplicationProperties {
-		if value, ok := v.(string); ok {
-			spanProps[k] = value
-		}
+	// creating the attributes from the first message is a bit arbitrary, but it's the best we can do
+	if r.spanner != nil {
+		var span spanner.Spanner
+		span, ctx = r.spanner(
+			ctx,
+			r.log,
+			"handle batch",
+			map[string]any{
+				"receiver": r.Cfg.TopicOrQueueName,
+			},
+			ReceivedProperties(messages[0]),
+		)
+		defer span.Close()
+		log = span.LogFromContext(ctx, r.log)
 	}
+	log.Debugf("BatchReceive span")
 
-	batchCtx, span := r.CreateBatchReceivedMessageTracingContext(batchCtx, spanProps)
-	defer span.Finish()
-
-	err = r.Handler.Handle(batchCtx, r, messages)
+	err = r.Handler.Handle(ctx, r, messages)
 	if err != nil {
-		r.log.Infof("terminating due to batch handler err: %v", err)
+		log.Infof("terminating due to batch handler err: %v", err)
 		return err
 	}
 
-	r.log.Debugf("Processed %d messages", total)
+	log.Debugf("Processed %d messages", total)
 
 	return nil
 }
@@ -230,26 +221,27 @@ func (r *BatchReceiver) open() error {
 }
 
 func (r *BatchReceiver) close_() {
-	if r != nil {
-		r.log.Debugf("Close")
-		if r.Receiver != nil {
-			r.mtx.Lock()
-			defer r.mtx.Unlock()
-			if r.Handler != nil {
-				r.log.Debugf("Close batch handler")
-				r.Handler.Close()
-				r.Handler = nil
-			}
-
-			r.log.Debugf("Close receiver")
-			err := r.Receiver.Close(context.Background())
-			if err != nil {
-				azerr := fmt.Errorf("%s: Error closing receiver: %w", r, NewAzbusError(err))
-				r.log.Infof("%s", azerr)
-			}
+	if r == nil {
+		return
+	}
+	r.log.Debugf("Close")
+	if r.Receiver != nil {
+		r.mtx.Lock()
+		defer r.mtx.Unlock()
+		if r.Handler != nil {
+			r.log.Debugf("Close batch handler")
+			r.Handler.Close()
 			r.Handler = nil
-			r.Receiver = nil
-			r.Cancel = nil
 		}
+
+		r.log.Debugf("Close receiver")
+		err := r.Receiver.Close(context.Background())
+		if err != nil {
+			azerr := fmt.Errorf("%s: Error closing receiver: %w", r, NewAzbusError(err))
+			r.log.Infof("%s", azerr)
+		}
+		r.Handler = nil
+		r.Receiver = nil
+		r.Cancel = nil
 	}
 }

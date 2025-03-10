@@ -12,7 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/auth"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/datatrails/go-datatrails-common/logger"
-	"github.com/datatrails/go-datatrails-common/tracing"
+	"github.com/datatrails/go-datatrails-common/spanner"
 )
 
 const (
@@ -22,6 +22,28 @@ const (
 type SecretVault struct {
 	Name       string
 	Authorizer autorest.Authorizer // optional, nil for production
+	log        logger.Logger
+	Spanner    spanner.StartSpanFromContextFunc
+}
+
+type SecretVaultOption func(*SecretVault)
+
+func WithSecretVaultTracing(f spanner.StartSpanFromContextFunc) SecretVaultOption {
+	return func(k *SecretVault) {
+		k.Spanner = f
+	}
+}
+
+func NewSecretVault(name string, log logger.Logger, authorizer autorest.Authorizer, opts ...SecretVaultOption) *SecretVault {
+	s := SecretVault{
+		Name:       name,
+		Authorizer: authorizer,
+		log:        log,
+	}
+	for _, opt := range opts {
+		opt(&s)
+	}
+	return &s
 }
 
 type SecretEntry struct {
@@ -85,18 +107,19 @@ func NewKvClient(authorizer autorest.Authorizer) (keyvault.BaseClient, error) {
 func (k *SecretVault) ReadSecret(
 	ctx context.Context, id string,
 ) (*SecretEntry, error) {
-	log := logger.Sugar.FromContext(ctx)
-	defer log.Close()
-
+	log := k.log
+	if k.Spanner != nil {
+		var span spanner.Spanner
+		span, ctx = k.Spanner(ctx, log, "KeyVault GetSecret")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
 	log.Infof("ReadSecret: %s %s", k.Name, id)
 
 	kvClient, err := NewKvClient(k.Authorizer)
 	if err != nil {
 		return nil, err
 	}
-
-	span, ctx := tracing.StartSpanFromContext(ctx, "KeyVault GetSecret")
-	defer span.Finish()
 
 	secret, err := kvClient.GetSecret(ctx, k.Name, id, "")
 	if err != nil {
@@ -122,9 +145,14 @@ func (k *SecretVault) ReadSecret(
 func (k *SecretVault) GetOrgKeyHex(
 	ctx context.Context, id string,
 ) (*string, error) {
-	log := logger.Sugar.FromContext(ctx)
-	defer log.Close()
+	log := k.log
 
+	if k.Spanner != nil {
+		var span spanner.Spanner
+		span, ctx = k.Spanner(ctx, log, "KeyVault GetSecrets")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
 	log.Infof("looking for a secret: %s", id)
 	secret, err := k.ReadSecret(ctx, id)
 	if err != nil {
@@ -140,9 +168,14 @@ func (k *SecretVault) GetOrgKeyHex(
 func (k *SecretVault) ListSecrets(
 	ctx context.Context, prefix string, tags map[string]string,
 ) (map[string]SecretEntry, error) {
-	log := logger.Sugar.FromContext(ctx)
-	defer log.Close()
+	log := k.log
 
+	var span spanner.Spanner
+	if k.Spanner != nil {
+		span, ctx = k.Spanner(ctx, log, "KeyVault GetSecrets")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
 	log.Debugf("ListSecrets")
 
 	kvClient, err := NewKvClient(k.Authorizer)
@@ -152,9 +185,6 @@ func (k *SecretVault) ListSecrets(
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
-	span, ctx := tracing.StartSpanFromContext(ctx, "KeyVault GetSecrets")
-	defer span.Finish()
 
 	// must be <= 25
 	maxResults := int32(25)
@@ -167,7 +197,9 @@ func (k *SecretVault) ListSecrets(
 		return nil, fmt.Errorf("failed to read secrets: %w", err)
 	}
 
-	span.Finish()
+	if span != nil {
+		span.Close()
+	}
 
 	results := map[string]SecretEntry{}
 	for {

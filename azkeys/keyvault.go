@@ -18,21 +18,34 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/datatrails/go-datatrails-common/logger"
-	"github.com/datatrails/go-datatrails-common/tracing"
+	"github.com/datatrails/go-datatrails-common/spanner"
 )
 
 // KeyVault is the azure keyvault client for interacting with keyvault keys
 type KeyVault struct {
 	url        string
 	Authorizer autorest.Authorizer // optional, nil for production
+	log        logger.Logger
+	spanner    spanner.StartSpanFromContextFunc
+}
+
+type KeyVaultOption func(*KeyVault)
+
+func WithKeyVaultTracing(f spanner.StartSpanFromContextFunc) KeyVaultOption {
+	return func(k *KeyVault) {
+		k.spanner = f
+	}
 }
 
 // NewKeyVault creates a new keyvault client
-func NewKeyVault(keyvaultURL string) *KeyVault {
+func NewKeyVault(log logger.Logger, keyvaultURL string, opts ...KeyVaultOption) *KeyVault {
 	kv := KeyVault{
 		url: keyvaultURL,
+		log: log,
 	}
-
+	for _, opt := range opts {
+		opt(&kv)
+	}
 	return &kv
 }
 
@@ -63,13 +76,18 @@ func (kv *KeyVault) GetLatestKey(
 	ctx context.Context, keyName string,
 ) (keyvault.KeyBundle, error) {
 
+	log := kv.log
+	if kv.spanner != nil {
+		var span spanner.Spanner
+		span, ctx = kv.spanner(ctx, log, "KeyVault GetLatestKey")
+		defer span.Close()
+		//log = span.Logger()
+	}
+
 	kvClient, err := NewKvClient(kv.Authorizer)
 	if err != nil {
 		return keyvault.KeyBundle{}, err
 	}
-
-	span, ctx := tracing.StartSpanFromContext(ctx, "KeyVault GetKey")
-	defer span.Finish()
 
 	key, err := kvClient.GetKey(ctx, kv.url, keyName, "")
 	if err != nil {
@@ -86,24 +104,24 @@ func (kv *KeyVault) GetKeyVersionsKeys(
 	ctx context.Context, keyID string,
 ) ([]keyvault.KeyBundle, error) {
 
-	log := logger.Sugar.FromContext(ctx)
-	defer log.Close()
+	log := kv.log
+	if kv.spanner != nil {
+		var span spanner.Spanner
+		span, ctx = kv.spanner(ctx, log, "KeyVault GetKey Version")
+		defer span.Close()
+		log = span.LogFromContext(ctx, log)
+	}
 
 	kvClient, err := NewKvClient(kv.Authorizer)
 	if err != nil {
 		return []keyvault.KeyBundle{}, err
 	}
 
-	span, ctx := tracing.StartSpanFromContext(ctx, "KeyVault GetKeyVersions")
-	defer span.Finish()
-
 	pageLimit := int32(1)
 	keyVersions, err := kvClient.GetKeyVersions(ctx, kv.url, keyID, &pageLimit)
 	if err != nil {
 		return []keyvault.KeyBundle{}, fmt.Errorf("failed to read key: %w", err)
 	}
-
-	span.Finish()
 
 	keyVersionValues := keyVersions.Values()
 
@@ -186,6 +204,14 @@ func (kv *KeyVault) Sign(
 	algorithm keyvault.JSONWebKeySignatureAlgorithm,
 ) ([]byte, error) {
 
+	log := kv.log
+	if kv.spanner != nil {
+		var span spanner.Spanner
+		span, ctx = kv.spanner(ctx, log, "KeyVault Sign")
+		defer span.Close()
+		//log = span.Logger()
+	}
+
 	kvClient, err := NewKvClient(kv.Authorizer)
 	if err != nil {
 		return []byte{}, fmt.Errorf("failed to create keyvault client: %w", err)
@@ -199,9 +225,6 @@ func (kv *KeyVault) Sign(
 	}
 	keyName := GetKeyName(keyID)
 	keyVersion := GetKeyVersion(keyID)
-
-	span, ctx := tracing.StartSpanFromContext(ctx, "KeyVault Sign")
-	defer span.Finish()
 
 	signatureb64, err := kvClient.Sign(ctx, kv.url, keyName, keyVersion, params)
 	if err != nil {
@@ -269,6 +292,14 @@ func (kv *KeyVault) Verify(
 	algorithm keyvault.JSONWebKeySignatureAlgorithm,
 ) (bool, error) {
 
+	log := kv.log
+	if kv.spanner != nil {
+		var span spanner.Spanner
+		span, ctx = kv.spanner(ctx, log, "KeyVault Verify")
+		defer span.Close()
+		//log = span.Logger()
+	}
+
 	kvClient, err := NewKvClient(kv.Authorizer)
 	if err != nil {
 		return false, fmt.Errorf("failed to create keyvault client: %w", err)
@@ -282,9 +313,6 @@ func (kv *KeyVault) Verify(
 		Signature: &signatureStr,
 		Digest:    &digestStr,
 	}
-
-	span, ctx := tracing.StartSpanFromContext(ctx, "KeyVault Verify")
-	defer span.Finish()
 
 	result, err := kvClient.Verify(ctx, kv.url, keyID, keyVersion, params)
 	if err != nil {
