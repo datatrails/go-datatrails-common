@@ -13,7 +13,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.7.0
 	github.com/google/uuid v1.6.0
 	github.com/ldclabs/cose/go v0.0.0-20221214142927-d22c1cfc2154
-	github.com/opentracing-contrib/go-stdlib v1.0.0
+	github.com/opentracing-contrib/go-stdlib v1.1.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/openzipkin-contrib/zipkin-go-opentracing v0.5.0
 	github.com/openzipkin/zipkin-go v0.4.3
