@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/datatrails/go-datatrails-common/logger"
 )
 
 // Set a timeout for processing the message, this should be no later than
@@ -33,7 +35,7 @@ var (
 	ErrPeekLockTimeout = errors.New("peeklock deadline reached")
 )
 
-func (r *Receiver) setTimeout(ctx context.Context, log Logger, msg *ReceivedMessage) (context.Context, context.CancelFunc, time.Duration) {
+func (r *Receiver) setTimeout(ctx context.Context, log logger.Logger, msg *ReceivedMessage) (context.Context, context.CancelFunc, time.Duration) {
 
 	var cancel context.CancelFunc
 
