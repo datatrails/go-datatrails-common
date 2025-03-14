@@ -56,5 +56,5 @@ func (s *TestCoseSigner) KeyLocation() string {
 }
 
 func (s *TestCoseSigner) KeyIdentifier() string {
-	return "foo/bar"
+	return "location:foo/bar"
 }
