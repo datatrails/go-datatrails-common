@@ -1,6 +1,6 @@
 module github.com/datatrails/go-datatrails-common
 
-go 1.23.0
+go 1.24
 
 require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
@@ -20,7 +20,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/veraison/go-cose v1.1.0
 	go.uber.org/zap v1.27.0
-	google.golang.org/grpc v1.69.0-dev
+	google.golang.org/grpc v1.70.0
 )
 
 require (
@@ -56,6 +56,6 @@ require (
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	google.golang.org/protobuf v1.35.2 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
