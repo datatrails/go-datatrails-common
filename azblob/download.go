@@ -119,7 +119,7 @@ func (azp *Storer) Reader(
 			return nil, metadataErr
 		}
 		if parseErr := readerResponseMetadata(resp, metaData); parseErr != nil {
-			return nil, err
+			return nil, parseErr
 		}
 	}
 

@@ -86,6 +86,9 @@ linters-settings:
   goimports:
     local-prefixes: github.com/golangci/golangci-lint
   govet:
+    enable-all: true
+    disable:
+      - fieldalignment
     settings:
       printf:
         funcs:
@@ -107,8 +110,6 @@ linters-settings:
 # goconst - see ticket #3097
 # goerr113 - disabled see https://github.com/Djarvur/go-err113/issues/10
 # gofumpt - not useful - confusing messages
-# gomnd - see ticket #3116
-# govet - see ticket #3117
 # nilreturn onwardis not yet evaluated...
 # misspell - expected UK spelling with misspell, but customer facing text needs to be US.
 # tagalign - suppress until we can get a golang code formatter that will fix this (cosmetic)
@@ -130,9 +131,7 @@ linters:
     - err113
     - errchkjson
     - errname
-    - execinquery
     - exhaustruct
-    - exportloopref
     - forbidigo
     - forcetypeassert
     # DONT re-enable funlen please
@@ -146,7 +145,6 @@ linters:
     - godox
     - gofumpt
     - gomoddirectives
-    - gomnd
     - gosec
     - gosimple
     - inamedparam
