@@ -20,6 +20,9 @@ import (
 	zipkinhttp "github.com/openzipkin/zipkin-go/reporter/http"
 )
 
+type Span = opentracing.Span
+type StartSpanOption = opentracing.StartSpanOption
+
 const (
 	requestID         = "x-request-id"
 	otSpanContext     = "x-ot-span-context"
@@ -87,7 +90,7 @@ func SetSpanField(ctx context.Context, key string, value string) {
 	}
 }
 
-func NewSpanContext(ctx context.Context, operationName string) (opentracing.Span, context.Context) {
+func NewSpanContext(ctx context.Context, operationName string) (Span, context.Context) {
 	span := opentracing.StartSpan(operationName)
 	if span == nil {
 		return nil, ctx
@@ -97,7 +100,7 @@ func NewSpanContext(ctx context.Context, operationName string) (opentracing.Span
 }
 
 // StartSpanFromContext is a simple wrapper that removes the requirement to import "github.com/opentracing/opentracing-go" in business code.
-func StartSpanFromContext(ctx context.Context, name string, options ...opentracing.StartSpanOption) (opentracing.Span, context.Context) {
+func StartSpanFromContext(ctx context.Context, name string, options ...StartSpanOption) (Span, context.Context) {
 	return opentracing.StartSpanFromContext(ctx, name, options...)
 }
 

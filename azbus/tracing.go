@@ -5,12 +5,13 @@ import (
 
 	"github.com/datatrails/go-datatrails-common/tracing"
 	opentracing "github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 )
 
-func (r *Receiver) CreateReceivedMessageTracingContext(ctx context.Context, message *ReceivedMessage, handler Handler) (context.Context, opentracing.Span) {
+func CreateReceivedMessageTracingContext(ctx context.Context, log Logger, label string, message *ReceivedMessage) (context.Context, opentracing.Span) {
 	// We don't have the tracing span info on the context yet, that is what this function will add
 	// we we log using the reciever logger
-	r.log.Debugf("ContextFromReceivedMessage(): ApplicationProperties %v", message.ApplicationProperties)
+	log.Debugf("ContextFromReceivedMessage(): ApplicationProperties %v", message.ApplicationProperties)
 
 	var opts = []opentracing.StartSpanOption{}
 	carrier := opentracing.TextMapCarrier{}
@@ -27,22 +28,25 @@ func (r *Receiver) CreateReceivedMessageTracingContext(ctx context.Context, mess
 	}
 	spanCtx, err := opentracing.GlobalTracer().Extract(opentracing.TextMap, carrier)
 	if err != nil {
-		r.log.Infof("CreateReceivedMessageWithTracingContext(): Unable to extract span context: %v", err)
+		log.Infof("CreateReceivedMessageWithTracingContext(): Unable to extract span context: %v", err)
 	} else {
 		opts = append(opts, opentracing.ChildOf(spanCtx))
 	}
-	span := opentracing.StartSpan("handle message", opts...)
+	span := opentracing.StartSpan(label, opts...)
 	ctx = opentracing.ContextWithSpan(ctx, span)
 	return ctx, span
 }
 
-func (r *Receiver) handleReceivedMessageWithTracingContext(ctx context.Context, message *ReceivedMessage, handler Handler) (Disposition, context.Context, error) {
-	ctx, span := r.CreateReceivedMessageTracingContext(ctx, message, handler)
+func (r *Receiver) handleReceivedMessageWithTracingContext(ctx context.Context, message *ReceivedMessage, label string, handler Handler) (Disposition, context.Context, error) {
+	ctx, span := CreateReceivedMessageTracingContext(ctx, r.log, label, message)
 	defer span.Finish()
+	span.LogFields(
+		otlog.String("receiver", r.String()),
+	)
 	return handler.Handle(ctx, message)
 }
 
-func (s *Sender) updateSendingMesssageForSpan(ctx context.Context, message *OutMessage, span opentracing.Span) {
+func (s *Sender) updateSendingMesssageForSpan(ctx context.Context, message *OutMessage, span tracing.Span) {
 	log := tracing.LogFromContext(ctx, s.log)
 	defer log.Close()
 

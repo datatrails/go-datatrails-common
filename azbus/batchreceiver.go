@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/datatrails/go-datatrails-common/tracing"
+	otlog "github.com/opentracing/opentracing-go/log"
 )
 
 // BatchHandler is completely responsible for the processing of a batch of messages.
@@ -96,31 +97,6 @@ func (r *BatchReceiver) String() string {
 	return fmt.Sprintf("%s", r.Cfg.TopicOrQueueName)
 }
 
-func (r *BatchReceiver) CreateBatchReceivedMessageTracingContext(ctx context.Context, spanProps map[string]string) (context.Context, opentracing.Span) {
-	// We don't have the tracing span info on the context yet, that is what this function will add
-	// we we log using the reciever logger
-	r.log.Debugf("ContextFromReceivedMessage(): %v", spanProps)
-
-	var opts = []opentracing.StartSpanOption{}
-	carrier := opentracing.TextMapCarrier{}
-	// This just gets all the message Application Properties into a string map. That map is then passed into the
-	// open tracing constructor which extracts any bits it is interested in to use to setup the spans etc.
-	// It will ignore anything it doesn't care about. So the filtering of the map is done for us and
-	// we don't need to pre-filter it.
-	for k, v := range spanProps {
-		carrier.Set(k, v)
-	}
-	spanCtx, err := opentracing.GlobalTracer().Extract(opentracing.TextMap, carrier)
-	if err != nil {
-		r.log.Infof("CreateBatchReceivedMessageTracingContext(): Unable to extract span context: %v", err)
-	} else {
-		opts = append(opts, opentracing.ChildOf(spanCtx))
-	}
-	span := opentracing.StartSpan("handle batch", opts...)
-	ctx = opentracing.ContextWithSpan(ctx, span)
-	return ctx, span
-}
-
 func (r *BatchReceiver) receiveMessages(ctx context.Context) error {
 	r.log.Debugf("BatchSize %d, BatchDeadline: %v", r.Cfg.BatchSize, r.Cfg.BatchDeadline)
 
@@ -138,6 +114,12 @@ func (r *BatchReceiver) receiveOneMessageBatch(ctx context.Context) error {
 		return fmt.Errorf("BatchSize must be greater than zero")
 	}
 
+	span, ctx := tracing.StartSpanFromContext(ctx, "BatchReceiver")
+	defer span.Finish()
+	span.LogFields(
+		otlog.String("sender", r.String()),
+	)
+
 	var err error
 	var messages []*ReceivedMessage
 	messages, err = r.Receiver.ReceiveMessages(ctx, r.Cfg.BatchSize, nil)
@@ -153,17 +135,7 @@ func (r *BatchReceiver) receiveOneMessageBatch(ctx context.Context) error {
 	batchCtx, cancel := context.WithTimeout(ctx, r.Cfg.BatchDeadline)
 	defer cancel()
 
-	// creating the span props from the first message is a bit arbitrary, but it's the best we can do
-	spanProps := make(map[string]string)
-	for k, v := range messages[0].ApplicationProperties {
-		if value, ok := v.(string); ok {
-			spanProps[k] = value
-		}
-	}
-
-	batchCtx, span := r.CreateBatchReceivedMessageTracingContext(batchCtx, spanProps)
-	defer span.Finish()
-
+	// each individual message carries its own properteis and span
 	err = r.Handler.Handle(batchCtx, r, messages)
 	if err != nil {
 		r.log.Infof("terminating due to batch handler err: %v", err)
