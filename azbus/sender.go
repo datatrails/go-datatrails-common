@@ -100,19 +100,7 @@ func (s *Sender) Open() error {
 // Send submits a message to the queue. Ignores cancellation.
 func (s *Sender) Send(ctx context.Context, message *OutMessage) error {
 
-	// Without this fix eventsourcepoller and similar services repeatedly context cancel and repeatedly
-	// restart.
-	ctx = context.WithoutCancel(ctx)
-
 	var err error
-
-	span, ctx := tracing.StartSpanFromContext(ctx, "Sender.Send")
-	defer span.Finish()
-
-	// Get the logging context after we create the span as that may have created a new
-	// trace and stashed the traceid in the metadata.
-	log := tracing.LogFromContext(ctx, s.log)
-	defer log.Close()
 
 	// boots & braces
 	if s.sender == nil {
@@ -122,12 +110,24 @@ func (s *Sender) Send(ctx context.Context, message *OutMessage) error {
 		}
 	}
 
+	// Without this fix eventsourcepoller and similar services repeatedly context cancel and repeatedly
+	// restart.
+	ctx = context.WithoutCancel(ctx)
+
+	span, ctx := tracing.StartSpanFromContext(ctx, "Sender.Send")
+	defer span.Finish()
+
+	// Get the logging context after we create the span as that may have created a new
+	// trace and stashed the traceid in the metadata.
+	log := tracing.LogFromContext(ctx, s.log)
+	defer log.Close()
+
 	// We set and log a message ID so we can trace the message through the bus
 	id := uuid.New().String()
 	message.MessageID = &id
 
 	span.LogFields(
-		otlog.String("sender", s.Cfg.TopicOrQueueName),
+		otlog.String("sender", s.String()),
 		otlog.String("message id", id),
 	)
 
@@ -155,10 +155,9 @@ func (s *Sender) NewMessageBatch(ctx context.Context) (*OutMessageBatch, error) 
 	return s.sender.NewMessageBatch(ctx, nil)
 }
 
-// BatchAddMessage calls Addmessage on batch
-// Note: this method is a direct pass through and exists only to provide a
-// mockable interface for adding messages to a batch.
-func (s *Sender) BatchAddMessage(batch *OutMessageBatch, m *OutMessage, options *azservicebus.AddMessageOptions) error {
+// BatchAddMessage calls Addmessage on batch and adds span tracing
+func (s *Sender) BatchAddMessage(ctx context.Context, span tracing.Span, batch *OutMessageBatch, m *OutMessage, options *azservicebus.AddMessageOptions) error {
+	s.updateSendingMesssageForSpan(ctx, m, span)
 	return batch.AddMessage(m, options)
 }
 
@@ -176,7 +175,7 @@ func (s *Sender) SendBatch(ctx context.Context, batch *OutMessageBatch) error {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Sender.SendBatch")
 	defer span.Finish()
 	span.LogFields(
-		otlog.String("sender", s.Cfg.TopicOrQueueName),
+		otlog.String("sender", s.String()),
 	)
 
 	// Get the logging context after we create the span as that may have created a new
@@ -191,10 +190,8 @@ func (s *Sender) SendBatch(ctx context.Context, batch *OutMessageBatch) error {
 			return err
 		}
 	}
+
 	// Note: sizing must be dealt with as the batch is created and accumulated.
-
-	// Note: the first message properties (including application properties) are established by the first message in the batch
-
 	err = s.sender.SendMessageBatch(ctx, batch, nil)
 	if err != nil {
 		azerr := fmt.Errorf("SendMessageBatch failed in %s: %w", time.Since(now), NewAzbusError(err))

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
+	otrace "github.com/opentracing/opentracing-go"
 )
 
 type MsgSender interface {
@@ -12,7 +13,7 @@ type MsgSender interface {
 
 	Send(context.Context, *OutMessage) error
 	NewMessageBatch(context.Context) (*OutMessageBatch, error)
-	BatchAddMessage(batch *OutMessageBatch, m *OutMessage, options *azservicebus.AddMessageOptions) error
+	BatchAddMessage(context.Context, otrace.Span, *OutMessageBatch, *OutMessage, *azservicebus.AddMessageOptions) error
 
 	SendBatch(context.Context, *OutMessageBatch) error
 	String() string
