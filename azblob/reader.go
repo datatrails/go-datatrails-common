@@ -53,12 +53,13 @@ func NewReaderNoAuth(url string, opts ...ReaderOption) (Reader, error) {
 	readerOptions := ParseReaderOptions(opts...)
 
 	azp := &Storer{
-		AccountName:   readerOptions.accountName, // just for logging
-		ResourceGroup: "",                        // just for logging
-		Subscription:  "",                        // just for logging
-		Container:     readerOptions.container,
-		credential:    nil,
-		rootURL:       url,
+		AccountName:          readerOptions.accountName, // just for logging
+		ResourceGroup:        "",                        // just for logging
+		Subscription:         "",                        // just for logging
+		Container:            readerOptions.container,
+		credential:           nil,
+		rootURL:              url,
+		startSpanFromContext: readerOptions.startSpanFromContext,
 	}
 
 	azp.serviceClient, err = azStorageBlob.NewServiceClientWithNoCredential(
@@ -102,12 +103,13 @@ func NewReaderDefaultAuth(url string, opts ...ReaderOption) (Reader, error) {
 	readerOptions := ParseReaderOptions(opts...)
 
 	azp := &Storer{
-		AccountName:   readerOptions.accountName, // just for logging
-		ResourceGroup: "",                        // just for logging
-		Subscription:  "",                        // just for logging
-		Container:     readerOptions.container,
-		credential:    nil,
-		rootURL:       url,
+		AccountName:          readerOptions.accountName, // just for logging
+		ResourceGroup:        "",                        // just for logging
+		Subscription:         "",                        // just for logging
+		Container:            readerOptions.container,
+		credential:           nil,
+		rootURL:              url,
+		startSpanFromContext: readerOptions.startSpanFromContext,
 	}
 
 	credentials, err := azidentity.NewDefaultAzureCredential(nil)

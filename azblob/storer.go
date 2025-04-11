@@ -34,6 +34,8 @@ type Storer struct {
 
 	log                          Logger
 	setReadResponseScannedStatus ReadResponseScannedStatus
+
+	startSpanFromContext startSpanFromContextFunc
 }
 
 type StorerOption func(*Storer)
@@ -41,6 +43,12 @@ type StorerOption func(*Storer)
 func WithSetScannedStatus(s ReadResponseScannedStatus) StorerOption {
 	return func(a *Storer) {
 		a.setReadResponseScannedStatus = s
+	}
+}
+
+func WithStorerSpanFromContext(s startSpanFromContextFunc) StorerOption {
+	return func(a *Storer) {
+		a.startSpanFromContext = s
 	}
 }
 
