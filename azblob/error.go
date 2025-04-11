@@ -56,7 +56,7 @@ func (e *Error) StatusCode() int {
 		logger.Sugar.Debugf("Return statusCode %d", e.statusCode)
 		return e.statusCode
 	}
-	logger.Sugar.Debugf("Return InternalServerError")
+	logger.Sugar.Debugf("Return InternalServerError: %v", e)
 	return http.StatusInternalServerError
 }
 
