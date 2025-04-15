@@ -22,7 +22,7 @@ type Spanner interface {
 // the Go compiler treats interfaces defined in separate packages as different even
 // though the signature is identical. So this struct hides the interface and returns a
 // concrete type instead.
-// Conveniently it also hides calls to the opentracing-go pacakage thsu making it
+// Conveniently it also hides calls to the opentracing-go package thsu making it
 // easier to move to opentelemetry later.
 type Span struct {
 	span opentracing.Span

@@ -27,8 +27,6 @@ func (azp *Storer) getTags(
 	identity string,
 ) (map[string]string, error) {
 
-	azp.log.Debugf("getTags: %s", identity)
-
 	var err error
 
 	blobClient, err := azp.containerClient.NewBlobClient(identity)
@@ -53,8 +51,6 @@ func (azp *Storer) getMetadata(
 	identity string,
 ) (map[string]string, error) {
 
-	azp.log.Debugf("getMetadata: %s", identity)
-
 	blobClient, err := azp.containerClient.NewBlobClient(identity)
 	if err != nil {
 		return nil, ErrorFromError(err)
@@ -74,8 +70,6 @@ func (azp *Storer) Reader(
 	identity string,
 	opts ...Option,
 ) (*ReaderResponse, error) {
-
-	azp.log.Debugf("Reader: %s", identity)
 
 	var err error
 

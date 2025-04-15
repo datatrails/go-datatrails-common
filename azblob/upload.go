@@ -131,8 +131,6 @@ func (azp *Storer) WriteStream(
 	opts ...Option,
 ) (*WriteResponse, error) {
 
-	azp.log.Debugf("WriteStream BlockBlob %s", identity)
-
 	err := azp.checkContainer(ctx)
 	if err != nil {
 		return nil, err
@@ -152,7 +150,7 @@ func (azp *Storer) writeStream(
 	reader io.Reader,
 	leaseID string,
 ) (*WriteResponse, error) {
-	azp.log.Debugf("write %s", identity)
+
 	blockBlobClient, err := azp.containerClient.NewBlockBlobClient(identity)
 	if err != nil {
 		azp.log.Infof("Cannot get block blob client blob: %v", err)
